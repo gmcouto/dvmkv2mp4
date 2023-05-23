@@ -11,6 +11,10 @@ REMOVESOURCE="no"
 DEBUG="no"
 ## Check OSTYPE and set ionice level to idle to not hammer disks during conversion
 ADDSUBS="no"
+## Remove DV-MP4 as suffix
+NOMP4SUFFIX="no"
+## Do not preserve extracted subs
+NOPRESERVESUBS="no"
 ## Whether to add subs to mp4 file default no as some bad subs can break the encoding"
 if [[ $OSTYPE == 'darwin'* ]]
 then
@@ -27,17 +31,19 @@ Created by github.com/gacopl, Released under GPLv3
 
 function print_help {
   echo "$HEADER"
-  echo "-l | --langs          - filter audio and subtitle tracks by lang comma separated if not hit by filter keep all tracks "
-  echo "-a | --asm            - create audio-subs-meta mkv file"
-  echo "-r | --remove-source  - remove source video after conversion"
-  echo "-s | --add-subs       - add srt subtitles to mp4 as subtitle tracks"
-  echo "-d | --debug          - keep intermediary conversion files"
-  echo "-v | --version        - print version"
+  echo "-l  | --langs             - filter audio and subtitle tracks by lang comma separated if not hit by filter keep all tracks "
+  echo "-a  | --asm               - create audio-subs-meta mkv file"
+  echo "-x  | --no-mp4-suffix     - do not add DV-MP4 suffix to output file"
+  echo "-p  | --no-preserve-subs  - do not preserve extracted subs"
+  echo "-r  | --remove-source     - remove source video after conversion"
+  echo "-s  | --add-subs          - add srt subtitles to mp4 as subtitle tracks"
+  echo "-d  | --debug             - keep intermediary conversion files"
+  echo "-v  | --version           - print version"
   echo ""
   echo "dvmkv2mp4 -l und,pol,eng -r -a # will process any DV/HDR10+ mkvs found in current dir and keep only Undefined, Polish and English tracks, will remove source file once done and will create audio-subs-meta file for future needs"
 }
 
-TEMP=$(getopt -o al:rsdvh --long asm,langs:,remove-source,add-subs,debug,version,help \
+TEMP=$(getopt -o al:rsdvhxp --long asm,no-mp4-suffix,no-preserve-subs,langs:,remove-source,add-subs,debug,version,help \
               -n 'dvmkv2mp4' -- "$@")
 
 if [ $? != 0 ] ; then echo "Terminating..." >&2 ; exit 1 ; fi
@@ -47,13 +53,15 @@ eval set -- "$TEMP"
 
 while true; do
   case "$1" in
-    -v | --version ) echo "$HEADER"; shift; exit ;;
-    -d | --debug ) DEBUG="yes"; shift ;;
-    -a | --asm ) ASM="yes"; shift ;;
-    -r | --remove-source ) REMOVESOURCE="yes"; shift ;;
-    -s | --add-subs ) ADDSUBS="yes"; shift ;;
-    -h | --help ) print_help; shift; exit ;;
-    -l | --langs ) LANGS="$2"; shift 2 ;;
+    -v  | --version ) echo "$HEADER"; shift; exit ;;
+    -d  | --debug ) DEBUG="yes"; shift ;;
+    -a  | --asm ) ASM="yes"; shift ;;
+    -x  | --no-mp4-suffix ) NOMP4SUFFIX="yes"; shift ;;
+    -p  | --no-preserve-subs ) NOPRESERVESUBS="yes"; shift ;;
+    -r  | --remove-source ) REMOVESOURCE="yes"; shift ;;
+    -s  | --add-subs ) ADDSUBS="yes"; shift ;;
+    -h  | --help ) print_help; shift; exit ;;
+    -l  | --langs ) LANGS="$2"; shift 2 ;;
     -- ) shift; break ;;
     * ) break ;;
   esac
@@ -69,6 +77,10 @@ function cleanup {
   rm tracks.list
   rm chapters.list
   rm BL*hevc
+  if [ $NOPRESERVESUBS == "yes" ]; then
+    echo "deleting subs"
+    rm *DV-MP4.*.srt
+  fi
   rm "${input}.dvconverting"
   if [ $REMOVESOURCE == "yes" ]; then
     rm "${input}"
@@ -315,6 +327,7 @@ EOF
       inputbase=${input%.mkv}
       dvmp4sub=`echo ${input%.mkv} | $sed 's/\ DV\|\ HDR10+//g'`
       for i in "$dvmp4sub"\ DV-MP4.*.{srt,sup}; do 
+          echo "Preserving $i"
           eval "cp \"$i\" \"`echo "$i" | $sed 's/\ DV-MP4//g' | $sed \"s/.*\.\(.*\)\.\(s..\)/\$inputbase\.\1\.\2/g\"`\"";
       done
       rm BL.hevc *DV-MP4.asm *DV-MP4.*.srt *DV-MP4.sup ${input}.dvconverting
@@ -377,6 +390,9 @@ EOF
   mp4string+=("-brand mp42isom -ab dby1 \"$output.mp4\"")
   echo ${mp4string[*]}
   eval ${mp4string[*]}
+  if [ $NOMP4SUFFIX == "yes" ]; then
+    mv "$output.mp4" "${output% DV-MP4}.mp4"
+  fi
   if [ $DEBUG != "yes" ]; then
     cleanup
   else
